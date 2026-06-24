@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>앱 평가 시스템</title>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+  <style>
+    /* ── Reset & Base ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --primary: #6C63FF;
+      --primary-dark: #574FD6;
+      --accent: #FF6584;
+      --bg: #F4F6FF;
+      --surface: #FFFFFF;
+      --text: #1A1A2E;
+      --text-sub: #6B7280;
+      --star-on: #FBBF24;
+      --star-off: #E5E7EB;
+      --success: #10B981;
+      --radius: 16px;
+      --shadow: 0 4px 24px rgba(108,99,255,0.12);
+      --shadow-sm: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .hidden { display: none !important; }
+
+    /* ── Layout ── */
+    .screen {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+
+    .card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    /* ── Typography ── */
+    h1 { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.5px; }
+    h2 { font-size: 1.25rem; font-weight: 700; }
+    h3 { font-size: 1rem; font-weight: 700; }
+    p  { font-size: 0.9rem; color: var(--text-sub); line-height: 1.5; }
+
+    .badge {
+      display: inline-block;
+      background: var(--primary);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 99px;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-outline {
+      background: transparent;
+      color: var(--primary);
+      border: 2px solid var(--primary);
+    }
+    .btn-sm {
+      width: auto;
+      padding: 8px 20px;
+      font-size: 0.85rem;
+    }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+    /* ── Form ── */
+    label { display: block; font-size: 0.8rem; font-weight: 600; color: var(--text-sub); margin-bottom: 6px; }
+    select, input, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 2px solid #E5E7EB;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-family: inherit;
+      background: var(--bg);
+      color: var(--text);
+      transition: border-color 0.2s;
+      outline: none;
+    }
+    select:focus, input:focus, textarea:focus { border-color: var(--primary); }
+    textarea { resize: none; height: 72px; line-height: 1.5; }
+
+    /* ── Stars ── */
+    .stars {
+      display: flex;
+      gap: 6px;
+      font-size: 2.2rem;
+      cursor: pointer;
+      user-select: none;
+      justify-content: center;
+    }
+    .star { color: var(--star-off); transition: color 0.15s, transform 0.1s; }
+    .star.on { color: var(--star-on); }
+    .star:hover { transform: scale(1.15); }
+    .star-label {
+      text-align: center;
+      font-size: 0.8rem;
+      color: var(--text-sub);
+      margin-top: 4px;
+      min-height: 18px;
+    }
+
+    /* ── Progress ── */
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #E5E7EB;
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--primary), var(--accent));
+      border-radius: 99px;
+      transition: width 0.4s ease;
+    }
+
+    /* ── App card (participant) ── */
+    .app-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .app-icon {
+      width: 56px; height: 56px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.6rem;
+      flex-shrink: 0;
+    }
+    .app-meta { flex: 1; }
+    .app-meta h2 { margin-bottom: 2px; }
+    .app-meta .creator { font-size: 0.8rem; color: var(--text-sub); }
+    .app-desc { font-size: 0.85rem; color: var(--text-sub); background: var(--bg); padding: 10px 12px; border-radius: 10px; margin-bottom: 20px; }
+
+    .nav-row { display: flex; gap: 10px; margin-top: 16px; }
+    .nav-row .btn { flex: 1; }
+
+    .divider {
+      height: 1px;
+      background: #E5E7EB;
+      margin: 20px 0;
+    }
+
+    /* ── Success screen ── */
+    .success-icon {
+      width: 72px; height: 72px;
+      background: var(--success);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2rem;
+      margin: 0 auto 16px;
+      box-shadow: 0 8px 24px rgba(16,185,129,0.3);
+    }
+
+    /* ── Already rated note ── */
+    .rated-note {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #F0FDF4;
+      border: 1.5px solid #86EFAC;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      color: #166534;
+      margin-top: 12px;
+    }
+
+    /* ═══════════════════════════════
+       ADMIN STYLES
+    ═══════════════════════════════ */
+    #admin-screen {
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0;
+      min-height: 100vh;
+    }
+
+    .admin-header {
+      background: linear-gradient(135deg, var(--primary) 0%, #8B5CF6 100%);
+      color: #fff;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .admin-header h1 { color: #fff; font-size: 1.4rem; }
+    .admin-header p  { color: rgba(255,255,255,0.75); font-size: 0.85rem; margin-top: 2px; }
+    .live-dot {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem; color: rgba(255,255,255,0.85);
+    }
+    .live-dot::before {
+      content: '';
+      width: 8px; height: 8px;
+      background: #4ADE80;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .admin-body { padding: 24px 32px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 28px;
+    }
+    .summary-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+      text-align: center;
+    }
+    .summary-card .big { font-size: 2rem; font-weight: 800; color: var(--primary); }
+    .summary-card .lbl { font-size: 0.78rem; color: var(--text-sub); margin-top: 2px; }
+
+    .section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-sub);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* leaderboard */
+    .leaderboard { display: flex; flex-direction: column; gap: 12px; }
+    .lb-row {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-sm);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      transition: box-shadow 0.2s;
+    }
+    .lb-row:hover { box-shadow: var(--shadow); }
+    .lb-rank {
+      font-size: 1.3rem;
+      font-weight: 900;
+      color: var(--text-sub);
+      width: 30px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .lb-rank.gold   { color: #F59E0B; }
+    .lb-rank.silver { color: #9CA3AF; }
+    .lb-rank.bronze { color: #B45309; }
+    .lb-icon {
+      width: 44px; height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem;
+      flex-shrink: 0;
+    }
+    .lb-info { flex: 1; min-width: 0; }
+    .lb-info h3 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .lb-info .sub { font-size: 0.78rem; color: var(--text-sub); }
+    .lb-score { text-align: right; flex-shrink: 0; }
+    .lb-score .avg {
+      font-size: 1.3rem; font-weight: 800; color: var(--primary);
+      display: flex; align-items: center; gap: 3px;
+    }
+    .lb-score .cnt { font-size: 0.75rem; color: var(--text-sub); }
+
+    /* star mini */
+    .star-mini { color: var(--star-on); font-size: 0.9rem; }
+
+    /* expand comments */
+    .comments-toggle {
+      background: none; border: none;
+      font-size: 0.78rem; color: var(--primary); cursor: pointer;
+      font-weight: 600; padding: 2px 0; margin-top: 4px;
+      font-family: inherit;
+    }
+    .comments-panel {
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #E5E7EB;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .comment-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.82rem;
+    }
+    .comment-avatar {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.65rem; font-weight: 800;
+      flex-shrink: 0;
+    }
+    .comment-body { flex: 1; }
+    .comment-name { font-weight: 700; color: var(--text); }
+    .comment-text { color: var(--text-sub); margin-top: 1px; }
+    .comment-stars { color: var(--star-on); font-size: 0.75rem; }
+
+    /* star bar chart */
+    .star-dist { margin-top: 10px; }
+    .bar-row {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 0.72rem; color: var(--text-sub); margin-bottom: 4px;
+    }
+    .bar-track {
+      flex: 1; height: 6px;
+      background: #E5E7EB; border-radius: 99px; overflow: hidden;
+    }
+    .bar-fill { height: 100%; background: var(--star-on); border-radius: 99px; }
+
+    /* toast */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      background: #1A1A2E; color: #fff;
+      padding: 10px 20px; border-radius: 99px;
+      font-size: 0.85rem; font-weight: 600;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.3s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    #toast.show { opacity: 1; }
+
+    /* loading */
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid #E5E7EB;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* responsive admin */
+    @media (max-width: 700px) {
+      .admin-body { padding: 16px; }
+      .admin-header { padding: 18px 16px; flex-direction: column; align-items: flex-start; gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     CONFIGURATION — 여기만 수정하세요!
+══════════════════════════════════════════════════ -->
+<script>
+const CONFIG = {
+  lectureName: "2024 클로드 AI 강의",
+  adminPassword: "admin1234",
+  firebaseConfig: {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT",
+    storageBucket: "YOUR_PROJECT.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+  },
+  apps: [
+    { id: "app1", emoji: "⏱️", name: "스톱워치 앱",       creator: "김철수", desc: "기록과 랩타임을 지원하는 스톱워치" },
+    { id: "app2", emoji: "📝", name: "메모장 앱",         creator: "이영희", desc: "마크다운을 지원하는 스마트 메모장" },
+    { id: "app3", emoji: "🎵", name: "뮤직 플레이어",     creator: "박민준", desc: "음악을 재생하고 플레이리스트 관리" },
+    { id: "app4", emoji: "🌤️", name: "날씨 앱",           creator: "정수연", desc: "실시간 날씨와 주간 예보 제공" },
+    { id: "app5", emoji: "💪", name: "운동 트래커",       creator: "홍길동", desc: "운동 기록과 칼로리를 추적" },
+    { id: "app6", emoji: "📚", name: "영단어 퀴즈",       creator: "김다은", desc: "매일 단어를 외우는 학습 앱" },
+  ]
+};
+</script>
+<!-- ══════════════════════════════════════════════════ -->
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<!-- ─────────────────────────────────────────────────
+     PARTICIPANT SCREENS (mobile)
+───────────────────────────────────────────────── -->
+
+<!-- 1. LOADING -->
+<div id="loading-screen" class="screen">
+  <div class="spinner"></div>
+  <p style="margin-top:16px;text-align:center">연결 중...</p>
+</div>
+
+<!-- 2. SELECT NAME -->
+<div id="name-screen" class="screen hidden">
+  <div class="card">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2.5rem;margin-bottom:8px">🏆</div>
+      <h1 id="lecture-name-title" style="margin-bottom:6px">앱 평가</h1>
+      <p>참가자들의 앱을 직접 평가해보세요!</p>
+    </div>
+    <div style="margin-bottom:16px">
+      <label for="participant-select">내 이름 선택</label>
+      <select id="participant-select">
+        <option value="">-- 이름을 선택하세요 --</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="start-btn" onclick="startRating()">평가 시작하기 →</button>
+  </div>
+</div>
+
+<!-- 3. RATING -->
+<div id="rating-screen" class="screen hidden">
+  <div class="card">
+    <!-- progress -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <span style="font-size:0.78rem;color:var(--text-sub);font-weight:600" id="progress-label"></span>
+      <span class="badge" id="progress-badge"></span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+
+    <!-- app info -->
+    <div class="app-header">
+      <div class="app-icon" id="app-emoji"></div>
+      <div class="app-meta">
+        <h2 id="app-name"></h2>
+        <div class="creator" id="app-creator"></div>
+      </div>
+    </div>
+    <div class="app-desc" id="app-desc"></div>
+
+    <div class="divider"></div>
+
+    <!-- stars -->
+    <p style="text-align:center;font-weight:700;margin-bottom:12px">별점을 선택하세요</p>
+    <div class="stars" id="stars">
+      <span class="star" data-v="1">★</span>
+      <span class="star" data-v="2">★</span>
+      <span class="star" data-v="3">★</span>
+      <span class="star" data-v="4">★</span>
+      <span class="star" data-v="5">★</span>
+    </div>
+    <div class="star-label" id="star-label"></div>
+
+    <div style="margin-top:16px">
+      <label for="comment-input">한줄평 (선택)</label>
+      <textarea id="comment-input" placeholder="이 앱에 대한 짧은 한줄평을 남겨보세요..."></textarea>
+    </div>
+
+    <div id="already-rated" class="rated-note hidden">
+      ✅ 이미 평가한 앱입니다. 수정하려면 별점이나 한줄평을 변경 후 저장하세요.
+    </div>
+
+    <!-- nav -->
+    <div class="nav-row">
+      <button class="btn btn-outline" id="prev-btn" onclick="navigate(-1)">← 이전</button>
+      <button class="btn btn-primary" id="next-btn" onclick="saveAndNext()">저장 후 다음 →</button>
+    </div>
+    <button class="btn btn-outline" id="finish-btn" onclick="finish()" style="margin-top:10px;display:none">평가 완료하기 ✓</button>
+  </div>
+</div>
+
+<!-- 4. SUCCESS -->
+<div id="success-screen" class="screen hidden">
+  <div class="card" style="text-align:center">
+    <div class="success-icon">✓</div>
+    <h2 style="margin-bottom:8px">평가 완료!</h2>
+    <p style="margin-bottom:24px">모든 앱 평가가 저장되었습니다.<br>참여해 주셔서 감사합니다 😊</p>
+    <button class="btn btn-outline" onclick="resetParticipant()">처음으로 돌아가기</button>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────
+     ADMIN SCREEN (web)
+───────────────────────────────────────────────── -->
+
+<!-- ADMIN LOGIN -->
+<div id="admin-login-screen" class="screen hidden">
+  <div class="card">
+    <div style="text-align:center;margin-bottom:24px">
+      <div style="font-size:2rem;margin-bottom:8px">🔐</div>
+      <h2>관리자 로그인</h2>
+    </div>
+    <div style="margin-bottom:16px">
+      <label for="admin-pw">비밀번호</label>
+      <input type="password" id="admin-pw" placeholder="비밀번호를 입력하세요" onkeydown="if(event.key==='Enter')adminLogin()">
+    </div>
+    <button class="btn btn-primary" onclick="adminLogin()">로그인</button>
+    <button class="btn btn-outline" onclick="location.search=''" style="margin-top:10px">← 참가자 화면으로</button>
+  </div>
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div id="admin-screen" class="screen hidden">
+  <div class="admin-header">
+    <div>
+      <h1 id="admin-lecture-title">관리자 대시보드</h1>
+      <p>실시간 평가 현황</p>
+    </div>
+    <div class="live-dot">LIVE</div>
+  </div>
+
+  <div class="admin-body">
+    <!-- summary -->
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="big" id="stat-total-ratings">0</div>
+        <div class="lbl">총 평가 수</div>
+      </div>
+      <div class="summary-card">
+        <div class="big" id="stat-avg">-</div>
+        <div class="lbl">전체 평균 별점</div>
+      </div>
+      <div class="summary-card">
+        <div class="big" id="stat-apps">0</div>
+        <div class="lbl">등록된 앱 수</div>
+      </div>
+    </div>
+
+    <!-- leaderboard -->
+    <div class="section-title">앱 순위</div>
+    <div class="leaderboard" id="leaderboard">
+      <div style="text-align:center;padding:32px;color:var(--text-sub)">
+        <div class="spinner" style="margin-bottom:12px"></div>
+        데이터를 불러오는 중...
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─────────────────────────────────────────────────
+     JAVASCRIPT
+───────────────────────────────────────────────── -->
+<script>
+// ── State ──
+let db;
+let currentUser = null;
+let appsToRate = [];
+let currentIndex = 0;
+let currentRating = 0;
+let sessionRatings = {}; // { appId: { rating, comment } }
+const STAR_LABELS = ['', '별로예요', '아쉬워요', '보통이에요', '좋아요', '최고예요!'];
+
+// ── Init ──
+async function init() {
+  document.getElementById('lecture-name-title').textContent = CONFIG.lectureName;
+  document.getElementById('admin-lecture-title').textContent = CONFIG.lectureName + ' — 관리자';
+
+  // URL params
+  const params = new URLSearchParams(location.search);
+  if (params.get('mode') === 'admin') {
+    showAdminLogin();
+    return;
+  }
+
+  // Firebase init
+  try {
+    firebase.initializeApp(CONFIG.firebaseConfig);
+    db = firebase.database();
+    // test connection
+    await db.ref('.info/connected').once('value');
+    showNameScreen();
+  } catch(e) {
+    // Demo mode (no Firebase)
+    console.warn('Firebase not configured, running in demo mode:', e.message);
+    db = null;
+    showNameScreen();
+  }
+}
+
+// ── Screens ──
+function showScreen(id) {
+  ['loading-screen','name-screen','rating-screen','success-screen','admin-login-screen','admin-screen']
+    .forEach(s => document.getElementById(s).classList.toggle('hidden', s !== id));
+}
+
+function showNameScreen() {
+  const sel = document.getElementById('participant-select');
+  CONFIG.apps.forEach(a => {
+    const opt = document.createElement('option');
+    opt.value = a.creator;
+    opt.textContent = a.creator + ' (' + a.name + ')';
+    sel.appendChild(opt);
+  });
+  showScreen('name-screen');
+}
+
+function startRating() {
+  const sel = document.getElementById('participant-select');
+  if (!sel.value) { toast('이름을 선택해주세요'); return; }
+  currentUser = sel.value;
+  appsToRate = CONFIG.apps.filter(a => a.creator !== currentUser);
+  currentIndex = 0;
+  sessionRatings = {};
+  loadUserRatings();
+}
+
+async function loadUserRatings() {
+  if (db) {
+    try {
+      const snap = await db.ref('ratings').once('value');
+      const all = snap.val() || {};
+      CONFIG.apps.forEach(app => {
+        const key = sanitizeKey(currentUser);
+        if (all[app.id] && all[app.id][key]) {
+          sessionRatings[app.id] = {
+            rating: all[app.id][key].rating,
+            comment: all[app.id][key].comment || ''
+          };
+        }
+      });
+    } catch(e) { console.warn('Load error:', e); }
+  }
+  showRatingScreen();
+}
+
+function showRatingScreen() {
+  showScreen('rating-screen');
+  renderApp();
+}
+
+function renderApp() {
+  const app = appsToRate[currentIndex];
+  const total = appsToRate.length;
+  const done = currentIndex + 1;
+
+  document.getElementById('progress-label').textContent = done + ' / ' + total;
+  document.getElementById('progress-badge').textContent = app.name;
+  document.getElementById('progress-fill').style.width = (done / total * 100) + '%';
+  document.getElementById('app-emoji').textContent = app.emoji;
+  document.getElementById('app-name').textContent = app.name;
+  document.getElementById('app-creator').textContent = '만든이: ' + app.creator;
+  document.getElementById('app-desc').textContent = app.desc;
+  document.getElementById('comment-input').value = '';
+  document.getElementById('already-rated').classList.add('hidden');
+
+  // Load existing rating
+  const existing = sessionRatings[app.id];
+  if (existing) {
+    setStars(existing.rating);
+    document.getElementById('comment-input').value = existing.comment || '';
+    document.getElementById('already-rated').classList.remove('hidden');
+  } else {
+    setStars(0);
+  }
+
+  // nav buttons
+  document.getElementById('prev-btn').disabled = currentIndex === 0;
+  const isLast = currentIndex === total - 1;
+  document.getElementById('next-btn').style.display = isLast ? 'none' : 'block';
+  document.getElementById('finish-btn').style.display = isLast ? 'block' : 'none';
+}
+
+// ── Stars ──
+document.getElementById('stars').addEventListener('click', e => {
+  const star = e.target.closest('.star');
+  if (star) setStars(+star.dataset.v);
+});
+document.getElementById('stars').addEventListener('mouseover', e => {
+  const star = e.target.closest('.star');
+  if (star) highlightStars(+star.dataset.v);
+});
+document.getElementById('stars').addEventListener('mouseleave', () => highlightStars(currentRating));
+
+function setStars(v) {
+  currentRating = v;
+  highlightStars(v);
+  document.getElementById('star-label').textContent = STAR_LABELS[v] || '';
+}
+function highlightStars(v) {
+  document.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('on', +s.dataset.v <= v);
+  });
+}
+
+// ── Navigate ──
+function navigate(dir) {
+  const newIdx = currentIndex + dir;
+  if (newIdx < 0 || newIdx >= appsToRate.length) return;
+  currentIndex = newIdx;
+  renderApp();
+}
+
+async function saveAndNext() {
+  await saveCurrentRating();
+  currentIndex++;
+  renderApp();
+}
+
+async function finish() {
+  await saveCurrentRating();
+  showScreen('success-screen');
+}
+
+async function saveCurrentRating() {
+  if (currentRating === 0) {
+    const cont = confirm('별점을 선택하지 않았습니다. 이 앱은 건너뛰겠습니까?');
+    if (!cont) return;
+    return;
+  }
+  const app = appsToRate[currentIndex];
+  const data = {
+    rating: currentRating,
+    comment: document.getElementById('comment-input').value.trim(),
+    rater: currentUser,
+    ts: Date.now()
+  };
+  sessionRatings[app.id] = data;
+
+  if (db) {
+    try {
+      await db.ref('ratings/' + app.id + '/' + sanitizeKey(currentUser)).set(data);
+      toast('저장됨 ✓');
+    } catch(e) {
+      toast('저장 실패: ' + e.message);
+    }
+  } else {
+    toast('[데모] 저장됨 (Firebase 미연결)');
+  }
+}
+
+function resetParticipant() {
+  currentUser = null; currentIndex = 0; currentRating = 0; sessionRatings = {};
+  document.getElementById('participant-select').value = '';
+  showScreen('name-screen');
+}
+
+// ── Admin ──
+function showAdminLogin() {
+  showScreen('admin-login-screen');
+}
+
+function adminLogin() {
+  if (document.getElementById('admin-pw').value === CONFIG.adminPassword) {
+    initAdminDashboard();
+  } else {
+    toast('비밀번호가 틀렸습니다');
+    document.getElementById('admin-pw').value = '';
+  }
+}
+
+function initAdminDashboard() {
+  showScreen('admin-screen');
+  document.getElementById('stat-apps').textContent = CONFIG.apps.length;
+
+  if (db) {
+    db.ref('ratings').on('value', snap => renderDashboard(snap.val() || {}));
+  } else {
+    renderDashboard({});
+  }
+}
+
+function renderDashboard(ratingsData) {
+  let totalRatings = 0;
+  let totalSum = 0;
+
+  const appStats = CONFIG.apps.map(app => {
+    const appRatings = ratingsData[app.id] ? Object.values(ratingsData[app.id]) : [];
+    const count = appRatings.length;
+    const sum = appRatings.reduce((a, r) => a + r.rating, 0);
+    const avg = count ? (sum / count) : 0;
+    totalRatings += count;
+    totalSum += sum;
+    return { ...app, ratings: appRatings, count, avg };
+  });
+
+  document.getElementById('stat-total-ratings').textContent = totalRatings;
+  document.getElementById('stat-avg').textContent =
+    totalRatings ? (totalSum / totalRatings).toFixed(2) : '-';
+
+  appStats.sort((a, b) => b.avg - a.avg || b.count - a.count);
+
+  const lb = document.getElementById('leaderboard');
+  if (!appStats.length) { lb.innerHTML = '<p>등록된 앱이 없습니다.</p>'; return; }
+
+  lb.innerHTML = appStats.map((app, i) => {
+    const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+    const rankEmoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '';
+
+    // star distribution
+    const dist = [5,4,3,2,1].map(s => {
+      const cnt = app.ratings.filter(r => r.rating === s).length;
+      const pct = app.count ? Math.round(cnt / app.count * 100) : 0;
+      return `<div class="bar-row"><span>${'★'.repeat(s)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><span style="min-width:28px">${cnt}명</span></div>`;
+    }).join('');
+
+    // comments
+    const commentItems = app.ratings
+      .filter(r => r.comment)
+      .sort((a,b) => b.ts - a.ts)
+      .map(r => `
+        <div class="comment-item">
+          <div class="comment-avatar">${(r.rater||'?').slice(0,2)}</div>
+          <div class="comment-body">
+            <div class="comment-name">${escHtml(r.rater||'익명')} <span class="comment-stars">${'★'.repeat(r.rating)}</span></div>
+            <div class="comment-text">${escHtml(r.comment)}</div>
+          </div>
+        </div>`).join('');
+
+    const panelId = 'panel-' + app.id;
+    const stars5 = starsHtml(app.avg);
+
+    return `
+    <div class="lb-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;align-items:center;gap:16px">
+        <div class="lb-rank ${rankClass}">${rankEmoji}</div>
+        <div class="lb-icon">${app.emoji}</div>
+        <div class="lb-info">
+          <h3>${escHtml(app.name)}</h3>
+          <div class="sub">만든이: ${escHtml(app.creator)}</div>
+          <div class="sub" style="margin-top:2px">${escHtml(app.desc)}</div>
+        </div>
+        <div class="lb-score">
+          <div class="avg">${stars5} ${app.avg ? app.avg.toFixed(2) : '-'}</div>
+          <div class="cnt">${app.count}개 평가</div>
+          ${app.count ? `<button class="comments-toggle" onclick="togglePanel('${panelId}')">한줄평 보기 ▾</button>` : ''}
+        </div>
+      </div>
+      ${app.count ? `
+      <div class="comments-panel hidden" id="${panelId}">
+        <div class="star-dist">${dist}</div>
+        ${commentItems ? `<div style="margin-top:12px;font-size:0.78rem;font-weight:700;color:var(--text-sub);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">한줄평</div>${commentItems}` : '<p style="font-size:0.82rem">아직 한줄평이 없습니다.</p>'}
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function togglePanel(id) {
+  const panel = document.getElementById(id);
+  const btn = panel.previousElementSibling.querySelector('.comments-toggle');
+  const open = panel.classList.toggle('hidden');
+  btn.textContent = open ? '한줄평 보기 ▾' : '접기 ▴';
+}
+
+function starsHtml(avg) {
+  const full = Math.floor(avg);
+  const half = avg - full >= 0.5;
+  let s = '';
+  for (let i = 1; i <= 5; i++) {
+    if (i <= full) s += '<span class="star-mini">★</span>';
+    else if (i === full + 1 && half) s += '<span class="star-mini" style="opacity:0.5">★</span>';
+    else s += '<span class="star-mini" style="color:#E5E7EB">★</span>';
+  }
+  return s;
+}
+
+// ── Utils ──
+function sanitizeKey(str) {
+  return str.replace(/[.#$\/\[\]]/g, '_');
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, duration = 2000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── Boot ──
+init();
+</script>
+</body>
+</html>
