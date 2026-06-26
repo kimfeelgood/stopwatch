@@ -1,50 +1,54 @@
-# 강의 만족도 평가 페이지 설정
+# 강의 만족도 평가 페이지 설정 (Google Sheets)
 
 `feedback.html` 한 파일로 동작합니다. 참가자는 각자 휴대폰으로 별점(별 반개 단위)과
 한줄평을 남기고, 강사(관리자)만 비밀번호로 평균 평점과 한줄평을 볼 수 있습니다.
 
-각자 다른 휴대폰에서 남긴 평가를 한곳에 모으려면 공유 저장소가 필요합니다.
-무료인 **Firebase Firestore** 를 사용합니다. (서버/백엔드 없이 동작)
+각자 다른 휴대폰에서 남긴 평가를 한곳에 모으기 위해 **Google Sheets + Apps Script**
+를 백엔드로 사용합니다. (별도 서버 불필요, 무료)
 
-## 설정 (10분, 한 번만)
+데이터 흐름:
+- 참가자 제출 → Apps Script(`doPost`) → Google 시트에 한 줄씩 기록
+- 관리자 조회 → Apps Script(`doGet`)가 **비밀번호를 검증한 뒤에만** 결과 반환
 
-1. https://console.firebase.google.com 접속 → **프로젝트 만들기**
-2. 프로젝트 화면에서 웹 앱 추가 (`</>` 아이콘) → 앱 닉네임 입력 → 등록
-3. 화면에 나오는 `firebaseConfig` 객체를 복사
-4. 왼쪽 메뉴 **빌드 → Firestore Database** → **데이터베이스 만들기** (위치 선택 후 생성)
-5. `feedback.html` 상단의 설정 부분을 채웁니다.
-   - `LECTURE_TITLE` : 강의 제목
-   - `ADMIN_PASSWORD` : 관리자 비밀번호 (기본값 `1234` → 꼭 바꾸세요)
-   - `firebaseConfig` : 3번에서 복사한 값으로 교체
+## 설정 (약 10분, 한 번만)
 
-## Firestore 보안 규칙
+### 1. 시트와 스크립트 준비
+1. https://sheets.google.com 에서 **새 스프레드시트** 만들기
+2. 상단 메뉴 **확장 프로그램 → Apps Script** 열기
+3. 기본 `Code.gs` 내용을 지우고, 이 저장소의 **`Code.gs`** 전체를 붙여넣기
+4. 파일 상단의 `ADMIN_PASSWORD` 를 원하는 비밀번호로 변경 (기본값 `1234` → 꼭 바꾸세요)
+5. 💾 저장
 
-Firestore Database → **규칙(Rules)** 탭에 아래를 붙여넣고 게시하세요.
-누구나 평가를 **제출(create)** 할 수 있지만, 기존 글의 수정·삭제는 막습니다.
+### 2. 웹 앱으로 배포
+1. Apps Script 우측 상단 **배포 → 새 배포**
+2. 유형 선택(⚙️) → **웹 앱**
+3. 설정
+   - 실행 계정: **나(본인)**
+   - 액세스 권한: **모든 사용자**  ← 참가자가 로그인 없이 제출하려면 필수
+4. **배포** → 권한 승인(본인 Google 계정) → 나오는 **웹 앱 URL** (`.../exec`) 복사
 
+### 3. HTML에 연결
+`feedback.html` 상단을 채웁니다.
+```js
+const LECTURE_TITLE = "강의 만족도 평가";          // 강의 제목
+const SCRIPT_URL    = "https://script.google.com/macros/s/.../exec"; // 2번에서 복사한 URL
 ```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /feedback/{doc} {
-      allow read: if true;       // 관리자 화면에서 결과를 읽기 위함
-      allow create: if true;     // 참가자 제출 허용
-      allow update, delete: if false;
-    }
-  }
-}
-```
-
-> 참고: 관리자 비밀번호는 페이지 안에서만 확인하는 간단한 잠금입니다.
-> 7명 내외의 소규모 강의용으로는 충분하지만, 민감한 데이터라면 Firebase
-> Authentication 으로 강화할 수 있습니다.
+> 관리자 비밀번호는 HTML이 아니라 **`Code.gs` 안에서만** 설정합니다.
+> 그래야 한줄평이 비밀번호 없이는 조회되지 않습니다.
 
 ## 사용법
 
-- **참가자**: `feedback.html` 주소를 공유하면 별점 + 한줄평을 남깁니다. (한 기기당 1회, "다시 평가하기"로 재제출 가능)
+- **참가자**: `feedback.html` 주소를 공유하면 별점 + 한줄평을 남깁니다.
+  (한 기기당 1회 제출, "다시 평가하기"로 재제출 가능)
 - **관리자**: 페이지 하단 **관리자** 링크 → 비밀번호 입력 → 평균 평점과 모든 한줄평 확인.
   또는 주소 끝에 `#admin` 을 붙여 바로 접근.
+- 원본 데이터는 Google 시트의 **`feedback`** 탭에 그대로 쌓이므로 직접 열어볼 수도 있습니다.
 
-## 배포
+## 코드 수정 후 재배포
 
-GitHub Pages 등 정적 호스팅에 올리면 됩니다. 별도 서버가 필요 없습니다.
+`Code.gs` 를 고친 뒤에는 **배포 → 배포 관리 → 편집(✏️) → 새 버전 → 배포** 로
+다시 배포해야 변경이 반영됩니다. (URL은 그대로 유지됩니다)
+
+## 배포(호스팅)
+
+`feedback.html` 은 GitHub Pages 등 정적 호스팅에 올리면 됩니다. 별도 서버가 필요 없습니다.
