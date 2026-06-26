@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>강의 만족도 평가</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0f0f0f;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo', sans-serif;
+      color: #fff;
+      padding: 20px;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 460px;
+      padding: 40px 32px;
+      background: #1a1a1a;
+      border-radius: 24px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    }
+
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #888;
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+
+    .label {
+      font-size: 14px;
+      color: #bbb;
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    /* ---- Star rating ---- */
+    .stars-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin-bottom: 28px;
+    }
+
+    .stars {
+      position: relative;
+      display: inline-block;
+      font-size: 48px;
+      line-height: 1;
+      letter-spacing: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .stars .layer {
+      position: absolute;
+      top: 0;
+      left: 0;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+
+    .stars .base   { color: #333; }
+    .stars .fill   { color: #f5b301; overflow: hidden; width: 0; }
+
+    .stars .zones {
+      position: relative;
+      display: flex;
+      z-index: 2;
+    }
+    .stars .zone {
+      width: 27px;   /* half a star incl. letter-spacing */
+      height: 48px;
+    }
+
+    .rating-text {
+      margin-top: 14px;
+      font-size: 15px;
+      color: #f5b301;
+      font-weight: 600;
+      height: 20px;
+    }
+
+    /* ---- Comment ---- */
+    textarea {
+      width: 100%;
+      background: #111;
+      border: 1px solid #2e2e2e;
+      border-radius: 12px;
+      color: #eee;
+      font-size: 15px;
+      padding: 14px;
+      resize: none;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    textarea:focus { border-color: #f5b301; }
+
+    input.name {
+      width: 100%;
+      background: #111;
+      border: 1px solid #2e2e2e;
+      border-radius: 12px;
+      color: #eee;
+      font-size: 15px;
+      padding: 12px 14px;
+      margin-bottom: 18px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input.name:focus { border-color: #f5b301; }
+
+    .hint { font-size: 12px; color: #666; margin-top: 6px; }
+
+    button {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s;
+      font-family: inherit;
+      margin-top: 24px;
+    }
+    button:active { transform: scale(0.98); }
+
+    .btn-submit { background: #f5b301; color: #1a1a1a; }
+    .btn-submit:disabled { background: #2a2a2a; color: #555; cursor: default; }
+
+    .msg {
+      text-align: center;
+      margin-top: 16px;
+      font-size: 14px;
+      min-height: 20px;
+    }
+    .msg.error { color: #ef4444; }
+    .msg.ok    { color: #22c55e; }
+
+    /* ---- Thank you / states ---- */
+    .center-state {
+      text-align: center;
+      padding: 20px 0;
+    }
+    .center-state .big { font-size: 48px; margin-bottom: 16px; }
+    .center-state p { color: #bbb; font-size: 15px; line-height: 1.6; }
+    .link-btn {
+      background: none;
+      color: #888;
+      font-size: 13px;
+      text-decoration: underline;
+      width: auto;
+      padding: 4px;
+      margin-top: 18px;
+      display: inline-block;
+    }
+
+    /* ---- Setup notice ---- */
+    .setup {
+      background: #2a1a00;
+      border: 1px solid #5a4000;
+      border-radius: 12px;
+      padding: 16px;
+      font-size: 13px;
+      color: #f5d27a;
+      line-height: 1.6;
+    }
+    .setup code { background: #000; padding: 1px 5px; border-radius: 4px; color: #f5b301; }
+
+    /* ---- Admin ---- */
+    .admin-link {
+      text-align: center;
+      margin-top: 24px;
+    }
+    .admin-link a { color: #444; font-size: 12px; text-decoration: none; }
+    .admin-link a:hover { color: #888; }
+
+    .summary {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .summary .avg {
+      font-size: 56px;
+      font-weight: 200;
+      color: #f5b301;
+    }
+    .summary .avg-stars { font-size: 22px; color: #f5b301; letter-spacing: 3px; margin: 4px 0; }
+    .summary .count { color: #888; font-size: 14px; }
+
+    .review {
+      background: #111;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .review .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .review .who { font-size: 13px; color: #aaa; font-weight: 600; }
+    .review .rate { color: #f5b301; font-size: 14px; }
+    .review .comment { color: #ddd; font-size: 14px; line-height: 1.5; }
+    .review .comment.empty { color: #555; font-style: italic; }
+    .review .date { font-size: 11px; color: #555; margin-top: 6px; }
+
+    .empty-state { text-align: center; color: #666; padding: 30px 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div class="container" id="app"></div>
+
+<script>
+  /* ============================================================
+     설정 — 아래 2가지만 채우면 됩니다.
+     (Google Sheets 연동 방법은 FEEDBACK_SETUP.md 참고)
+     ============================================================ */
+
+  // 1) 강의 제목
+  const LECTURE_TITLE = "강의 만족도 평가";
+
+  // 2) Google Apps Script 웹앱 URL
+  //    Apps Script에서 "웹 앱으로 배포" 후 나오는 .../exec 주소를 붙여넣으세요.
+  //    관리자 비밀번호는 HTML이 아니라 Apps Script(Code.gs) 안에서 설정합니다.
+  const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwEPdg7lNFlYWz6fhPTii4Dnnm8ZfPRrNLhRfnlYVXvtjAcQ-iQhQgrtgpW-QytCpyv/exec";
+
+  /* ============================================================
+     이 아래는 수정할 필요 없습니다.
+     ============================================================ */
+
+  const app = document.getElementById('app');
+  const CONFIGURED = SCRIPT_URL && SCRIPT_URL !== "YOUR_APPS_SCRIPT_URL";
+
+  // ---- 별점 텍스트 헬퍼 (0.5 단위) ----
+  function starString(rating) {
+    let s = '';
+    for (let i = 1; i <= 5; i++) {
+      if (rating >= i) s += '★';
+      else if (rating >= i - 0.5) s += '⯨';
+      else s += '☆';
+    }
+    return s;
+  }
+
+  function escapeHtml(str) {
+    return String(str || '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+  }
+
+  // ============================================================
+  //  화면: 설정 안내
+  // ============================================================
+  function renderSetup() {
+    app.innerHTML = `
+      <h1>${LECTURE_TITLE}</h1>
+      <p class="subtitle">설정이 필요합니다</p>
+      <div class="setup">
+        이 페이지를 사용하려면 <b>Google Sheets 연동</b>이 필요합니다.<br><br>
+        1. Google Sheets에서 새 시트를 만드세요.<br>
+        2. <code>확장 프로그램 → Apps Script</code> 에서
+           <code>Code.gs</code> 코드를 붙여넣으세요.<br>
+        3. <b>배포 → 웹 앱</b> (액세스: 모든 사용자) 으로 배포하고
+           <code>.../exec</code> 주소를 복사하세요.<br>
+        4. 이 파일 상단의 <code>SCRIPT_URL</code> 에 붙여넣으세요.<br><br>
+        자세한 단계는 <b>FEEDBACK_SETUP.md</b> 를 참고하세요.
+      </div>`;
+  }
+
+  // ============================================================
+  //  화면: 평가 입력 (참가자)
+  // ============================================================
+  let rating = 0;
+
+  function renderForm() {
+    if (localStorage.getItem('feedback_done')) {
+      renderThanks(true);
+      return;
+    }
+    app.innerHTML = `
+      <h1>${LECTURE_TITLE}</h1>
+      <p class="subtitle">강의는 어떠셨나요? 솔직한 평가를 남겨주세요 🙏</p>
+
+      <span class="label">별점 (별 반개 단위)</span>
+      <div class="stars-wrap">
+        <div class="stars" id="stars">
+          <span class="layer base">★★★★★</span>
+          <span class="layer fill" id="fill">★★★★★</span>
+          <span class="zones" id="zones"></span>
+        </div>
+        <div class="rating-text" id="ratingText"></div>
+      </div>
+
+      <input class="name" id="name" type="text" maxlength="20" placeholder="이름 (선택)">
+
+      <span class="label">한줄평</span>
+      <textarea id="comment" rows="3" maxlength="200" placeholder="강의에 대한 한마디를 남겨주세요"></textarea>
+      <div class="hint">최대 200자 · 이름은 적지 않아도 됩니다</div>
+
+      <button class="btn-submit" id="submit" disabled>제출하기</button>
+      <div class="msg" id="msg"></div>
+
+      <div class="admin-link"><a href="#admin" id="adminLink">관리자</a></div>
+    `;
+
+    // 별점 클릭 영역 10개 (0.5 단위)
+    const zones = document.getElementById('zones');
+    const fill = document.getElementById('fill');
+    const ratingText = document.getElementById('ratingText');
+    const submitBtn = document.getElementById('submit');
+
+    for (let i = 1; i <= 10; i++) {
+      const z = document.createElement('span');
+      z.className = 'zone';
+      const val = i * 0.5;
+      z.addEventListener('mouseenter', () => setFill(val));
+      z.addEventListener('click', () => {
+        rating = val;
+        setFill(val);
+        ratingText.textContent = val.toFixed(1) + ' / 5.0';
+        submitBtn.disabled = false;
+      });
+      zones.appendChild(z);
+    }
+    document.getElementById('stars').addEventListener('mouseleave', () => setFill(rating));
+
+    function setFill(val) {
+      fill.style.width = (val / 5 * 100) + '%';
+    }
+
+    submitBtn.addEventListener('click', submit);
+    document.getElementById('adminLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      openAdmin();
+    });
+  }
+
+  async function submit() {
+    const submitBtn = document.getElementById('submit');
+    const msg = document.getElementById('msg');
+    if (rating <= 0) { msg.className = 'msg error'; msg.textContent = '별점을 선택해주세요.'; return; }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = '제출 중...';
+    msg.textContent = '';
+
+    const name = document.getElementById('name').value.trim();
+    const comment = document.getElementById('comment').value.trim();
+
+    try {
+      // text/plain 으로 보내 CORS preflight 를 피합니다 (Apps Script 표준 패턴)
+      const res = await fetch(SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'submit', rating, name, comment })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'submit failed');
+
+      localStorage.setItem('feedback_done', '1');
+      renderThanks(false);
+    } catch (err) {
+      console.error(err);
+      submitBtn.disabled = false;
+      submitBtn.textContent = '제출하기';
+      msg.className = 'msg error';
+      msg.textContent = '제출에 실패했어요. 잠시 후 다시 시도해주세요.';
+    }
+  }
+
+  function renderThanks(already) {
+    app.innerHTML = `
+      <div class="center-state">
+        <div class="big">🎉</div>
+        <p>${already ? '이미 평가를 남겨주셨어요.' : '소중한 평가 감사합니다!'}<br>강의에 큰 도움이 됩니다.</p>
+        <button class="link-btn" id="again">다시 평가하기</button>
+      </div>
+      <div class="admin-link"><a href="#admin" id="adminLink">관리자</a></div>
+    `;
+    document.getElementById('again').addEventListener('click', () => {
+      localStorage.removeItem('feedback_done');
+      rating = 0;
+      renderForm();
+    });
+    document.getElementById('adminLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      openAdmin();
+    });
+  }
+
+  // ============================================================
+  //  화면: 관리자  (비밀번호는 서버 = Apps Script 에서 검증)
+  // ============================================================
+  function openAdmin() {
+    const pw = prompt('관리자 비밀번호를 입력하세요');
+    if (pw === null) return;
+    renderAdmin(pw);
+  }
+
+  async function renderAdmin(pw) {
+    app.innerHTML = `
+      <h1>${LECTURE_TITLE}</h1>
+      <p class="subtitle">관리자 — 평가 결과</p>
+      <div id="adminBody"><div class="empty-state">불러오는 중...</div></div>
+      <div class="admin-link"><a href="#" id="backLink">← 평가 화면으로</a></div>
+    `;
+    document.getElementById('backLink').addEventListener('click', (e) => {
+      e.preventDefault();
+      location.hash = '';
+      renderForm();
+    });
+
+    const body = document.getElementById('adminBody');
+    try {
+      const res = await fetch(SCRIPT_URL + '?action=list&pw=' + encodeURIComponent(pw));
+      const data = await res.json();
+
+      if (!data.ok) {
+        if (data.error === 'unauthorized') {
+          alert('비밀번호가 올바르지 않습니다.');
+          location.hash = '';
+          renderForm();
+          return;
+        }
+        throw new Error(data.error || 'load failed');
+      }
+
+      const items = data.items || [];
+      if (items.length === 0) {
+        body.innerHTML = `<div class="empty-state">아직 제출된 평가가 없습니다.</div>`;
+        return;
+      }
+
+      const avg = items.reduce((a, b) => a + (Number(b.rating) || 0), 0) / items.length;
+
+      let html = `
+        <div class="summary">
+          <div class="avg">${avg.toFixed(2)}</div>
+          <div class="avg-stars">${starString(Math.round(avg * 2) / 2)}</div>
+          <div class="count">참가자 ${items.length}명 평가</div>
+        </div>
+      `;
+
+      html += items.map(it => {
+        let date = '';
+        if (it.createdAt) {
+          const d = new Date(it.createdAt);
+          if (!isNaN(d)) date = d.toLocaleString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        }
+        return `
+          <div class="review">
+            <div class="top">
+              <span class="who">${escapeHtml(it.name) || '익명'}</span>
+              <span class="rate">${starString(it.rating)} ${Number(it.rating).toFixed(1)}</span>
+            </div>
+            <div class="comment ${it.comment ? '' : 'empty'}">${it.comment ? escapeHtml(it.comment) : '한줄평 없음'}</div>
+            ${date ? `<div class="date">${date}</div>` : ''}
+          </div>`;
+      }).join('');
+
+      body.innerHTML = html;
+    } catch (err) {
+      console.error(err);
+      body.innerHTML = `<div class="empty-state" style="color:#ef4444">불러오기에 실패했습니다.<br>Apps Script 설정을 확인해주세요.</div>`;
+    }
+  }
+
+  // ============================================================
+  //  시작
+  // ============================================================
+  if (!CONFIGURED) {
+    renderSetup();
+  } else if (location.hash === '#admin') {
+    openAdmin();
+  } else {
+    renderForm();
+  }
+</script>
+</body>
+</html>
