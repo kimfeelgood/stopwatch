@@ -173,6 +173,16 @@
     .nav-row { display: flex; gap: 10px; margin-top: 16px; }
     .nav-row .btn { flex: 1; }
 
+    .btn-skip {
+      background: #F3F4F6;
+      color: var(--text-sub);
+      font-size: 0.85rem;
+      padding: 10px;
+      margin-top: 8px;
+      border: 1.5px dashed #D1D5DB;
+    }
+    .btn-skip:hover { background: #E5E7EB; color: var(--text); }
+
     .divider {
       height: 1px;
       background: #E5E7EB;
@@ -506,6 +516,7 @@ const CONFIG = {
       <button class="btn btn-primary" id="next-btn" onclick="saveAndNext()">저장 후 다음 →</button>
     </div>
     <button class="btn btn-outline" id="finish-btn" onclick="finish()" style="margin-top:10px;display:none">평가 완료하기 ✓</button>
+    <button class="btn btn-skip" id="skip-btn" onclick="skipApp()">이 앱 평가 건너뛰기 (패스)</button>
   </div>
 </div>
 
@@ -706,6 +717,7 @@ function renderApp() {
   const isLast = currentIndex === total - 1;
   document.getElementById('next-btn').style.display = isLast ? 'none' : 'block';
   document.getElementById('finish-btn').style.display = isLast ? 'block' : 'none';
+  document.getElementById('skip-btn').textContent = isLast ? '이 앱 건너뛰고 완료하기 (패스)' : '이 앱 평가 건너뛰기 (패스)';
 }
 
 // ── Stars ──
@@ -749,10 +761,20 @@ async function finish() {
   showScreen('success-screen');
 }
 
+function skipApp() {
+  const isLast = currentIndex >= appsToRate.length - 1;
+  if (isLast) {
+    showScreen('success-screen');
+  } else {
+    currentIndex++;
+    renderApp();
+  }
+}
+
 async function saveCurrentRating() {
   if (currentRating === 0) {
-    if (!confirm('별점을 선택하지 않았습니다. 이 앱은 건너뛰겠습니까?')) return false;
-    return true;
+    toast('별점을 선택하거나 패스 버튼을 눌러주세요');
+    return false;
   }
   const app = appsToRate[currentIndex];
   const comment = document.getElementById('comment-input').value.trim();
