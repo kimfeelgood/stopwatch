@@ -5,10 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>앱 평가 시스템</title>
 
-  <!-- Firebase SDK -->
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
-
   <style>
     /* ── Reset & Base ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -403,15 +399,10 @@
 const CONFIG = {
   lectureName: "2024 클로드 AI 강의",
   adminPassword: "admin1234",
-  firebaseConfig: {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com",
-    projectId: "YOUR_PROJECT",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
-  },
+
+  // Google Apps Script 웹앱 URL (Code.gs 배포 후 붙여넣기)
+  scriptUrl: "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec",
+
   apps: [
     { id: "app1", emoji: "⏱️", name: "스톱워치 앱",       creator: "김철수", desc: "기록과 랩타임을 지원하는 스톱워치" },
     { id: "app2", emoji: "📝", name: "메모장 앱",         creator: "이영희", desc: "마크다운을 지원하는 스마트 메모장" },
@@ -579,39 +570,41 @@ const CONFIG = {
 ───────────────────────────────────────────────── -->
 <script>
 // ── State ──
-let db;
 let currentUser = null;
 let appsToRate = [];
 let currentIndex = 0;
 let currentRating = 0;
-let sessionRatings = {}; // { appId: { rating, comment } }
+let sessionRatings = {}; // { appId: { rating, comment, ts } }
+let adminPollTimer = null;
 const STAR_LABELS = ['', '별로예요', '아쉬워요', '보통이에요', '좋아요', '최고예요!'];
+const IS_CONFIGURED = () => CONFIG.scriptUrl && !CONFIG.scriptUrl.includes('YOUR_SCRIPT');
+
+// ── Google Apps Script API ──
+async function apiCall(params = {}) {
+  if (!IS_CONFIGURED()) return { success: false, demo: true };
+  try {
+    const url = new URL(CONFIG.scriptUrl);
+    Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
+    const res = await fetch(url.toString());
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    return await res.json();
+  } catch (e) {
+    console.warn('API error:', e);
+    return { success: false, error: e.message };
+  }
+}
 
 // ── Init ──
-async function init() {
+function init() {
   document.getElementById('lecture-name-title').textContent = CONFIG.lectureName;
   document.getElementById('admin-lecture-title').textContent = CONFIG.lectureName + ' — 관리자';
 
-  // URL params
   const params = new URLSearchParams(location.search);
   if (params.get('mode') === 'admin') {
-    showAdminLogin();
+    showScreen('admin-login-screen');
     return;
   }
-
-  // Firebase init
-  try {
-    firebase.initializeApp(CONFIG.firebaseConfig);
-    db = firebase.database();
-    // test connection
-    await db.ref('.info/connected').once('value');
-    showNameScreen();
-  } catch(e) {
-    // Demo mode (no Firebase)
-    console.warn('Firebase not configured, running in demo mode:', e.message);
-    db = null;
-    showNameScreen();
-  }
+  showNameScreen();
 }
 
 // ── Screens ──
@@ -622,6 +615,8 @@ function showScreen(id) {
 
 function showNameScreen() {
   const sel = document.getElementById('participant-select');
+  // prevent duplicate options on re-entry
+  sel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
   CONFIG.apps.forEach(a => {
     const opt = document.createElement('option');
     opt.value = a.creator;
@@ -642,25 +637,15 @@ function startRating() {
 }
 
 async function loadUserRatings() {
-  if (db) {
-    try {
-      const snap = await db.ref('ratings').once('value');
-      const all = snap.val() || {};
-      CONFIG.apps.forEach(app => {
-        const key = sanitizeKey(currentUser);
-        if (all[app.id] && all[app.id][key]) {
-          sessionRatings[app.id] = {
-            rating: all[app.id][key].rating,
-            comment: all[app.id][key].comment || ''
-          };
-        }
+  showScreen('loading-screen');
+  const result = await apiCall();
+  if (result.success && result.data) {
+    result.data
+      .filter(r => r.rater === currentUser)
+      .forEach(r => {
+        sessionRatings[r.appId] = { rating: Number(r.rating), comment: r.comment || '', ts: r.timestamp };
       });
-    } catch(e) { console.warn('Load error:', e); }
   }
-  showRatingScreen();
-}
-
-function showRatingScreen() {
   showScreen('rating-screen');
   renderApp();
 }
@@ -680,7 +665,6 @@ function renderApp() {
   document.getElementById('comment-input').value = '';
   document.getElementById('already-rated').classList.add('hidden');
 
-  // Load existing rating
   const existing = sessionRatings[app.id];
   if (existing) {
     setStars(existing.rating);
@@ -690,7 +674,6 @@ function renderApp() {
     setStars(0);
   }
 
-  // nav buttons
   document.getElementById('prev-btn').disabled = currentIndex === 0;
   const isLast = currentIndex === total - 1;
   document.getElementById('next-btn').style.display = isLast ? 'none' : 'block';
@@ -714,12 +697,10 @@ function setStars(v) {
   document.getElementById('star-label').textContent = STAR_LABELS[v] || '';
 }
 function highlightStars(v) {
-  document.querySelectorAll('.star').forEach(s => {
-    s.classList.toggle('on', +s.dataset.v <= v);
-  });
+  document.querySelectorAll('.star').forEach(s => s.classList.toggle('on', +s.dataset.v <= v));
 }
 
-// ── Navigate ──
+// ── Navigate & Save ──
 function navigate(dir) {
   const newIdx = currentIndex + dir;
   if (newIdx < 0 || newIdx >= appsToRate.length) return;
@@ -728,54 +709,52 @@ function navigate(dir) {
 }
 
 async function saveAndNext() {
-  await saveCurrentRating();
+  const saved = await saveCurrentRating();
+  if (saved === false) return; // user cancelled skip
   currentIndex++;
   renderApp();
 }
 
 async function finish() {
-  await saveCurrentRating();
+  const saved = await saveCurrentRating();
+  if (saved === false) return;
   showScreen('success-screen');
 }
 
 async function saveCurrentRating() {
   if (currentRating === 0) {
-    const cont = confirm('별점을 선택하지 않았습니다. 이 앱은 건너뛰겠습니까?');
-    if (!cont) return;
-    return;
+    if (!confirm('별점을 선택하지 않았습니다. 이 앱은 건너뛰겠습니까?')) return false;
+    return true;
   }
   const app = appsToRate[currentIndex];
-  const data = {
-    rating: currentRating,
-    comment: document.getElementById('comment-input').value.trim(),
-    rater: currentUser,
-    ts: Date.now()
-  };
-  sessionRatings[app.id] = data;
+  const comment = document.getElementById('comment-input').value.trim();
+  sessionRatings[app.id] = { rating: currentRating, comment, ts: Date.now() };
 
-  if (db) {
-    try {
-      await db.ref('ratings/' + app.id + '/' + sanitizeKey(currentUser)).set(data);
-      toast('저장됨 ✓');
-    } catch(e) {
-      toast('저장 실패: ' + e.message);
-    }
+  const nextBtn = document.getElementById('next-btn');
+  const finBtn  = document.getElementById('finish-btn');
+  nextBtn.disabled = finBtn.disabled = true;
+
+  const result = await apiCall({ action: 'rate', rater: currentUser, appId: app.id, rating: currentRating, comment });
+
+  nextBtn.disabled = finBtn.disabled = false;
+
+  if (result.demo) {
+    toast('⚠️ 데모모드 (scriptUrl 미설정)');
+  } else if (result.success) {
+    toast(result.action === 'updated' ? '수정됨 ✓' : '저장됨 ✓');
   } else {
-    toast('[데모] 저장됨 (Firebase 미연결)');
+    toast('저장 실패: ' + (result.error || '네트워크 오류'));
   }
+  return true;
 }
 
 function resetParticipant() {
   currentUser = null; currentIndex = 0; currentRating = 0; sessionRatings = {};
   document.getElementById('participant-select').value = '';
-  showScreen('name-screen');
+  showNameScreen();
 }
 
 // ── Admin ──
-function showAdminLogin() {
-  showScreen('admin-login-screen');
-}
-
 function adminLogin() {
   if (document.getElementById('admin-pw').value === CONFIG.adminPassword) {
     initAdminDashboard();
@@ -788,31 +767,44 @@ function adminLogin() {
 function initAdminDashboard() {
   showScreen('admin-screen');
   document.getElementById('stat-apps').textContent = CONFIG.apps.length;
+  fetchAndRender();
+  // 구글시트는 실시간 스트림 대신 10초 폴링
+  clearInterval(adminPollTimer);
+  adminPollTimer = setInterval(fetchAndRender, 10000);
+}
 
-  if (db) {
-    db.ref('ratings').on('value', snap => renderDashboard(snap.val() || {}));
-  } else {
-    renderDashboard({});
+async function fetchAndRender() {
+  const result = await apiCall();
+  // flat rows → grouped by appId
+  const grouped = {};
+  if (result.success && result.data) {
+    result.data.forEach(r => {
+      if (!grouped[r.appId]) grouped[r.appId] = {};
+      grouped[r.appId][r.rater] = {
+        rating: Number(r.rating),
+        comment: r.comment || '',
+        rater: r.rater,
+        ts: r.timestamp || 0
+      };
+    });
   }
+  renderDashboard(result.demo ? {} : grouped);
 }
 
 function renderDashboard(ratingsData) {
-  let totalRatings = 0;
-  let totalSum = 0;
+  let totalRatings = 0, totalSum = 0;
 
   const appStats = CONFIG.apps.map(app => {
     const appRatings = ratingsData[app.id] ? Object.values(ratingsData[app.id]) : [];
     const count = appRatings.length;
     const sum = appRatings.reduce((a, r) => a + r.rating, 0);
-    const avg = count ? (sum / count) : 0;
-    totalRatings += count;
-    totalSum += sum;
+    const avg = count ? sum / count : 0;
+    totalRatings += count; totalSum += sum;
     return { ...app, ratings: appRatings, count, avg };
   });
 
   document.getElementById('stat-total-ratings').textContent = totalRatings;
-  document.getElementById('stat-avg').textContent =
-    totalRatings ? (totalSum / totalRatings).toFixed(2) : '-';
+  document.getElementById('stat-avg').textContent = totalRatings ? (totalSum / totalRatings).toFixed(2) : '-';
 
   appStats.sort((a, b) => b.avg - a.avg || b.count - a.count);
 
@@ -820,20 +812,18 @@ function renderDashboard(ratingsData) {
   if (!appStats.length) { lb.innerHTML = '<p>등록된 앱이 없습니다.</p>'; return; }
 
   lb.innerHTML = appStats.map((app, i) => {
-    const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
-    const rankEmoji = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1) + '';
+    const rankClass = ['gold','silver','bronze'][i] || '';
+    const rankEmoji = ['🥇','🥈','🥉'][i] || (i + 1) + '';
 
-    // star distribution
     const dist = [5,4,3,2,1].map(s => {
       const cnt = app.ratings.filter(r => r.rating === s).length;
       const pct = app.count ? Math.round(cnt / app.count * 100) : 0;
       return `<div class="bar-row"><span>${'★'.repeat(s)}</span><div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div><span style="min-width:28px">${cnt}명</span></div>`;
     }).join('');
 
-    // comments
     const commentItems = app.ratings
       .filter(r => r.comment)
-      .sort((a,b) => b.ts - a.ts)
+      .sort((a, b) => b.ts - a.ts)
       .map(r => `
         <div class="comment-item">
           <div class="comment-avatar">${(r.rater||'?').slice(0,2)}</div>
@@ -844,8 +834,6 @@ function renderDashboard(ratingsData) {
         </div>`).join('');
 
     const panelId = 'panel-' + app.id;
-    const stars5 = starsHtml(app.avg);
-
     return `
     <div class="lb-row" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;align-items:center;gap:16px">
@@ -857,7 +845,7 @@ function renderDashboard(ratingsData) {
           <div class="sub" style="margin-top:2px">${escHtml(app.desc)}</div>
         </div>
         <div class="lb-score">
-          <div class="avg">${stars5} ${app.avg ? app.avg.toFixed(2) : '-'}</div>
+          <div class="avg">${starsHtml(app.avg)} ${app.avg ? app.avg.toFixed(2) : '-'}</div>
           <div class="cnt">${app.count}개 평가</div>
           ${app.count ? `<button class="comments-toggle" onclick="togglePanel('${panelId}')">한줄평 보기 ▾</button>` : ''}
         </div>
@@ -874,8 +862,8 @@ function renderDashboard(ratingsData) {
 function togglePanel(id) {
   const panel = document.getElementById(id);
   const btn = panel.previousElementSibling.querySelector('.comments-toggle');
-  const open = panel.classList.toggle('hidden');
-  btn.textContent = open ? '한줄평 보기 ▾' : '접기 ▴';
+  const hidden = panel.classList.toggle('hidden');
+  btn.textContent = hidden ? '한줄평 보기 ▾' : '접기 ▴';
 }
 
 function starsHtml(avg) {
@@ -891,13 +879,10 @@ function starsHtml(avg) {
 }
 
 // ── Utils ──
-function sanitizeKey(str) {
-  return str.replace(/[.#$\/\[\]]/g, '_');
-}
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
-function toast(msg, duration = 2000) {
+function toast(msg, duration = 2200) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.classList.add('show');
