@@ -173,6 +173,16 @@
     .nav-row { display: flex; gap: 10px; margin-top: 16px; }
     .nav-row .btn { flex: 1; }
 
+    .btn-skip {
+      background: #F3F4F6;
+      color: var(--text-sub);
+      font-size: 0.85rem;
+      padding: 10px;
+      margin-top: 8px;
+      border: 1.5px dashed #D1D5DB;
+    }
+    .btn-skip:hover { background: #E5E7EB; color: var(--text); }
+
     .divider {
       height: 1px;
       background: #E5E7EB;
@@ -506,6 +516,7 @@ const CONFIG = {
       <button class="btn btn-primary" id="next-btn" onclick="saveAndNext()">저장 후 다음 →</button>
     </div>
     <button class="btn btn-outline" id="finish-btn" onclick="finish()" style="margin-top:10px;display:none">평가 완료하기 ✓</button>
+    <button class="btn btn-skip" id="skip-btn" onclick="skipApp()">이 앱 평가 건너뛰기 (패스)</button>
   </div>
 </div>
 
@@ -605,6 +616,7 @@ async function apiCall(params = {}) {
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
     const res = await fetch(url.toString(), { redirect: 'follow' });
     const text = await res.text();
+    // Apps Script가 HTML 에러 페이지를 반환하면 JSON 파싱 실패 → 원인 안내
     if (text.trim().startsWith('<')) {
       if (text.includes('Sign in') || text.includes('로그인')) {
         return { success: false, error: '⛔ 인증 오류: 배포 설정에서 액세스 권한을 "모든 사용자(익명 포함)"으로 변경하세요.' };
@@ -642,6 +654,7 @@ function showScreen(id) {
 
 function showNameScreen() {
   const sel = document.getElementById('participant-select');
+  // prevent duplicate options on re-entry
   sel.querySelectorAll('option:not([value=""])').forEach(o => o.remove());
   CONFIG.apps.forEach(a => {
     const opt = document.createElement('option');
@@ -704,6 +717,7 @@ function renderApp() {
   const isLast = currentIndex === total - 1;
   document.getElementById('next-btn').style.display = isLast ? 'none' : 'block';
   document.getElementById('finish-btn').style.display = isLast ? 'block' : 'none';
+  document.getElementById('skip-btn').textContent = isLast ? '이 앱 건너뛰고 완료하기 (패스)' : '이 앱 평가 건너뛰기 (패스)';
 }
 
 // ── Stars ──
@@ -736,7 +750,7 @@ function navigate(dir) {
 
 async function saveAndNext() {
   const saved = await saveCurrentRating();
-  if (saved === false) return;
+  if (saved === false) return; // user cancelled skip
   currentIndex++;
   renderApp();
 }
@@ -747,10 +761,20 @@ async function finish() {
   showScreen('success-screen');
 }
 
+function skipApp() {
+  const isLast = currentIndex >= appsToRate.length - 1;
+  if (isLast) {
+    showScreen('success-screen');
+  } else {
+    currentIndex++;
+    renderApp();
+  }
+}
+
 async function saveCurrentRating() {
   if (currentRating === 0) {
-    if (!confirm('별점을 선택하지 않았습니다. 이 앱은 건너뛰겠습니까?')) return false;
-    return true;
+    toast('별점을 선택하거나 패스 버튼을 눌러주세요');
+    return false;
   }
   const app = appsToRate[currentIndex];
   const comment = document.getElementById('comment-input').value.trim();
@@ -797,12 +821,14 @@ function initAdminDashboard() {
   showScreen('admin-screen');
   document.getElementById('stat-apps').textContent = CONFIG.apps.length;
   fetchAndRender();
+  // 구글시트는 실시간 스트림 대신 10초 폴링
   clearInterval(adminPollTimer);
   adminPollTimer = setInterval(fetchAndRender, 10000);
 }
 
 async function fetchAndRender() {
   const result = await apiCall();
+  // flat rows → grouped by appId
   const grouped = {};
   if (result.success && result.data) {
     result.data.forEach(r => {
@@ -914,7 +940,7 @@ async function testConnection() {
 
   if (!IS_CONFIGURED()) {
     el.style.background = '#FEF3C7'; el.style.border = '1.5px solid #FDE68A'; el.style.color = '#92400E';
-    el.textContent = '⚠️ scriptUrl이 아직 설정되지 않았습니다.';
+    el.textContent = '⚠️ scriptUrl이 아직 설정되지 않았습니다. rating.html의 CONFIG.scriptUrl을 실제 URL로 교체하세요.';
     return;
   }
 
