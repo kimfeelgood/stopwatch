@@ -359,6 +359,16 @@
     }
     .bar-fill { height: 100%; background: var(--star-on); border-radius: 99px; }
 
+    /* error banner */
+    #error-banner {
+      position: fixed; top: 0; left: 0; right: 0;
+      background: #FEF2F2; border-bottom: 2px solid #FECACA;
+      color: #991B1B; font-size: 0.82rem; font-weight: 600;
+      padding: 10px 16px; z-index: 998;
+      display: none; line-height: 1.4;
+    }
+    #error-banner.show { display: block; }
+
     /* toast */
     #toast {
       position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
@@ -415,6 +425,8 @@ const CONFIG = {
 </script>
 <!-- ══════════════════════════════════════════════════ -->
 
+<!-- ERROR BANNER (persistent, above all screens) -->
+<div id="error-banner"></div>
 <!-- TOAST -->
 <div id="toast"></div>
 
@@ -554,8 +566,14 @@ const CONFIG = {
       </div>
     </div>
 
+    <!-- connection status -->
+    <div id="conn-status" style="display:none;margin-bottom:16px;padding:10px 14px;border-radius:10px;font-size:0.82rem;font-weight:600"></div>
+
     <!-- leaderboard -->
-    <div class="section-title">앱 순위</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+      <div class="section-title" style="margin-bottom:0">앱 순위</div>
+      <button class="btn btn-outline btn-sm" onclick="testConnection()">연결 테스트</button>
+    </div>
     <div class="leaderboard" id="leaderboard">
       <div style="text-align:center;padding:32px;color:var(--text-sub)">
         <div class="spinner" style="margin-bottom:12px"></div>
@@ -585,11 +603,21 @@ async function apiCall(params = {}) {
   try {
     const url = new URL(CONFIG.scriptUrl);
     Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, String(v)));
-    const res = await fetch(url.toString());
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    return await res.json();
+    const res = await fetch(url.toString(), { redirect: 'follow' });
+    const text = await res.text();
+    // Apps Script가 HTML 에러 페이지를 반환하면 JSON 파싱 실패 → 원인 안내
+    if (text.trim().startsWith('<')) {
+      if (text.includes('Sign in') || text.includes('로그인')) {
+        return { success: false, error: '⛔ 인증 오류: 배포 설정에서 액세스 권한을 "모든 사용자(익명 포함)"으로 변경하세요.' };
+      }
+      return { success: false, error: '⛔ Apps Script가 HTML을 반환했습니다. 배포 URL이 맞는지, 재배포를 했는지 확인하세요.' };
+    }
+    return JSON.parse(text);
   } catch (e) {
-    console.warn('API error:', e);
+    const msg = e.message || '';
+    if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('CORS')) {
+      return { success: false, error: '⛔ 네트워크/CORS 오류: scriptUrl이 올바른지, 배포가 완료됐는지 확인하세요.' };
+    }
     return { success: false, error: e.message };
   }
 }
@@ -741,9 +769,12 @@ async function saveCurrentRating() {
   if (result.demo) {
     toast('⚠️ 데모모드 (scriptUrl 미설정)');
   } else if (result.success) {
+    hideErrorBanner();
     toast(result.action === 'updated' ? '수정됨 ✓' : '저장됨 ✓');
   } else {
-    toast('저장 실패: ' + (result.error || '네트워크 오류'));
+    const errMsg = result.error || '네트워크 오류';
+    toast('저장 실패');
+    showErrorBanner(errMsg);
   }
   return true;
 }
@@ -876,6 +907,40 @@ function starsHtml(avg) {
     else s += '<span class="star-mini" style="color:#E5E7EB">★</span>';
   }
   return s;
+}
+
+// ── Connection test ──
+async function testConnection() {
+  const el = document.getElementById('conn-status');
+  el.style.display = 'block';
+  el.style.background = '#EFF6FF'; el.style.border = '1.5px solid #BFDBFE'; el.style.color = '#1E40AF';
+  el.textContent = '⏳ 연결 테스트 중...';
+
+  if (!IS_CONFIGURED()) {
+    el.style.background = '#FEF3C7'; el.style.border = '1.5px solid #FDE68A'; el.style.color = '#92400E';
+    el.textContent = '⚠️ scriptUrl이 아직 설정되지 않았습니다. rating.html의 CONFIG.scriptUrl을 실제 URL로 교체하세요.';
+    return;
+  }
+
+  const result = await apiCall({ action: 'ping' });
+  if (result.success && result.pong) {
+    el.style.background = '#F0FDF4'; el.style.border = '1.5px solid #86EFAC'; el.style.color = '#166534';
+    el.textContent = '✅ 연결 성공! Google Sheets와 정상 연결됐습니다. (' + result.time + ')';
+  } else {
+    el.style.background = '#FEF2F2'; el.style.border = '1.5px solid #FECACA'; el.style.color = '#991B1B';
+    el.textContent = '❌ 연결 실패: ' + (result.error || '알 수 없는 오류');
+    showErrorBanner(result.error || '알 수 없는 오류');
+  }
+}
+
+// ── Error banner ──
+function showErrorBanner(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = '⚠️ 연결 오류: ' + msg;
+  el.classList.add('show');
+}
+function hideErrorBanner() {
+  document.getElementById('error-banner').classList.remove('show');
 }
 
 // ── Utils ──
